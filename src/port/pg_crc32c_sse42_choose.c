@@ -30,8 +30,12 @@
 
 #include "port/pg_crc32c.h"
 
-static bool
-pg_crc32c_sse42_available(void)
+/*
+ * This gets called on the first call. It replaces the function pointer
+ * so that subsequent calls are routed directly to the chosen implementation.
+ */
+static pg_crc32c
+pg_comp_crc32c_choose(pg_crc32c crc, const void *data, size_t len)
 {
 	unsigned int exx[4] = {0, 0, 0, 0};
 
@@ -43,18 +47,14 @@ pg_crc32c_sse42_available(void)
 #error cpuid instruction not available
 #endif
 
-	return (exx[2] & (1 << 20)) != 0;	/* SSE 4.2 */
-}
-
-/*
- * This gets called on the first call. It replaces the function pointer
- * so that subsequent calls are routed directly to the chosen implementation.
- */
-static pg_crc32c
-pg_comp_crc32c_choose(pg_crc32c crc, const void *data, size_t len)
-{
-	if (pg_crc32c_sse42_available())
+	if ((exx[2] & (1 << 20)) != 0)	/* SSE 4.2 */
+	{
 		pg_comp_crc32c = pg_comp_crc32c_sse42;
+#ifdef USE_PCLMUL_WITH_RUNTIME_CHECK
+		if ((exx[2] & (1 << 1)) != 0)	/* PCLMUL */
+			pg_comp_crc32c = pg_comp_crc32c_pclmul;
+#endif
+	}
 	else
 		pg_comp_crc32c = pg_comp_crc32c_sb8;
 

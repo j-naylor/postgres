@@ -37,6 +37,11 @@
 
 typedef uint32 pg_crc32c;
 
+/* WIP: configure checks */
+#ifdef __x86_64__
+#define USE_PCLMUL_WITH_RUNTIME_CHECK
+#endif
+
 /* The INIT and EQ macros are the same for all implementations. */
 #define INIT_CRC32C(crc) ((crc) = 0xFFFFFFFF)
 #define EQ_CRC32C(c1, c2) ((c1) == (c2))
@@ -80,6 +85,23 @@ pg_comp_crc32c_dispatch(pg_crc32c crc, const void *data, size_t len)
 		return pg_comp_crc32c_sse42(crc, data, len);
 }
 
+#elif defined(USE_SSE42_CRC32C_WITH_RUNTIME_CHECK)
+
+/*
+ * Use Intel SSE 4.2 or PCLMUL instructions, but perform a runtime check first
+ * to check that they are available.
+ */
+#define COMP_CRC32C(crc, data, len) \
+	((crc) = pg_comp_crc32c((crc), (data), (len)))
+#define FIN_CRC32C(crc) ((crc) ^= 0xFFFFFFFF)
+
+extern pg_crc32c pg_comp_crc32c_sb8(pg_crc32c crc, const void *data, size_t len);
+extern pg_crc32c (*pg_comp_crc32c) (pg_crc32c crc, const void *data, size_t len);
+extern pg_crc32c pg_comp_crc32c_sse42(pg_crc32c crc, const void *data, size_t len);
+#ifdef USE_PCLMUL_WITH_RUNTIME_CHECK
+extern pg_crc32c pg_comp_crc32c_pclmul(pg_crc32c crc, const void *data, size_t len);
+#endif
+
 #elif defined(USE_ARMV8_CRC32C)
 /* Use ARMv8 CRC Extension instructions. */
 
@@ -98,7 +120,7 @@ extern pg_crc32c pg_comp_crc32c_armv8(pg_crc32c crc, const void *data, size_t le
 
 extern pg_crc32c pg_comp_crc32c_loongarch(pg_crc32c crc, const void *data, size_t len);
 
-#elif defined(USE_SSE42_CRC32C_WITH_RUNTIME_CHECK) || defined(USE_ARMV8_CRC32C_WITH_RUNTIME_CHECK)
+#elif defined(USE_ARMV8_CRC32C_WITH_RUNTIME_CHECK)
 
 /*
  * Use Intel SSE 4.2 or ARMv8 instructions, but perform a runtime check first
@@ -110,13 +132,7 @@ extern pg_crc32c pg_comp_crc32c_loongarch(pg_crc32c crc, const void *data, size_
 
 extern pg_crc32c pg_comp_crc32c_sb8(pg_crc32c crc, const void *data, size_t len);
 extern pg_crc32c (*pg_comp_crc32c) (pg_crc32c crc, const void *data, size_t len);
-
-#ifdef USE_SSE42_CRC32C_WITH_RUNTIME_CHECK
-extern pg_crc32c pg_comp_crc32c_sse42(pg_crc32c crc, const void *data, size_t len);
-#endif
-#ifdef USE_ARMV8_CRC32C_WITH_RUNTIME_CHECK
 extern pg_crc32c pg_comp_crc32c_armv8(pg_crc32c crc, const void *data, size_t len);
-#endif
 
 #else
 /*
