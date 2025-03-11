@@ -577,6 +577,36 @@ fi
 undefine([Ac_cachevar])dnl
 ])# PGAC_SSE42_CRC32_INTRINSICS
 
+# PGAC_AVX512_CRC32_INTRINSICS
+# ---------------------------
+# Check if the compiler supports the x86 CRC instructions added in AVX-512,
+# using intrinsics with function __attribute__((target("..."))):
+
+AC_DEFUN([PGAC_AVX512_CRC32_INTRINSICS],
+[define([Ac_cachevar], [AS_TR_SH([pgac_cv_avx512_crc32_intrinsics])])dnl
+AC_CACHE_CHECK([for _mm512_clmulepi64_epi128 with function attribute], [Ac_cachevar],
+[AC_LINK_IFELSE([AC_LANG_PROGRAM([#include <immintrin.h>
+    #include <stdint.h>
+    #if defined(__has_attribute) && __has_attribute (target)
+    __attribute__((target("avx512vl,vpclmulqdq")))
+    #endif
+    static int crc32_avx512_test(void)
+    {
+      __m512i x0 = _mm512_set1_epi32(0x1);
+      __m512i x1 = _mm512_set1_epi32(0x2);
+      __m512i x2 = _mm512_clmulepi64_epi128(x1, x0, 0x00); // vpclmulqdq
+      __m128i a1 = _mm_xor_epi64(_mm512_castsi512_si128(x1), _mm512_castsi512_si128(x0)); //avx512vl
+      int64_t val = _mm_crc32_u64(0, _mm_extract_epi64(a1, 0)); // 64-bit instruction
+      return (uint32_t)_mm_crc32_u64(val, _mm_extract_epi64(a1, 1));
+    }],
+  [return crc32_avx512_test();])],
+  [Ac_cachevar=yes],
+  [Ac_cachevar=no])])
+if test x"$Ac_cachevar" = x"yes"; then
+  pgac_avx512_crc32_intrinsics=yes
+fi
+undefine([Ac_cachevar])dnl
+])# PGAC_AVX512_CRC32_INTRINSICS
 
 # PGAC_ARMV8_CRC32C_INTRINSICS
 # ----------------------------
