@@ -152,7 +152,7 @@ pg_comp_crc32c_pclmul(pg_crc32c crc, const void *data, size_t length)
 		len = end - buf;
 	}
 
-	return pg_comp_crc32c_sse42_inline(crc0, buf, len);
+	return pg_comp_crc32c_sse42(crc0, buf, len);
 }
 
 #endif

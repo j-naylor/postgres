@@ -55,8 +55,10 @@ pg_comp_crc32c_choose(pg_crc32c crc, const void *data, size_t len)
 			pg_comp_crc32c = pg_comp_crc32c_pclmul;
 #endif
 	}
+#ifdef USE_SSE42_CRC32C_WITH_RUNTIME_CHECK
 	else
 		pg_comp_crc32c = pg_comp_crc32c_sb8;
+#endif
 
 	return pg_comp_crc32c(crc, data, len);
 }

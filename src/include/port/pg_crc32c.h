@@ -47,7 +47,10 @@ typedef uint32 pg_crc32c;
 #define EQ_CRC32C(c1, c2) ((c1) == (c2))
 
 #if defined(USE_SSE42_CRC32C)
-/* Use Intel SSE4.2 instructions. */
+/*
+ * Use either Intel SSE 4.2 or PCLMUL instructions. We don't need a runtime check
+ * for SSE 4.2, so we can inline those in some cases.
+ */
 
 #include <nmmintrin.h>
 
@@ -55,7 +58,11 @@ typedef uint32 pg_crc32c;
 	((crc) = pg_comp_crc32c_dispatch((crc), (data), (len)))
 #define FIN_CRC32C(crc) ((crc) ^= 0xFFFFFFFF)
 
+extern pg_crc32c (*pg_comp_crc32c) (pg_crc32c crc, const void *data, size_t len);
 extern pg_crc32c pg_comp_crc32c_sse42(pg_crc32c crc, const void *data, size_t len);
+#ifdef USE_PCLMUL_WITH_RUNTIME_CHECK
+extern pg_crc32c pg_comp_crc32c_pclmul(pg_crc32c crc, const void *data, size_t len);
+#endif
 
 pg_attribute_no_sanitize_alignment()
 static inline
@@ -67,9 +74,9 @@ pg_comp_crc32c_dispatch(pg_crc32c crc, const void *data, size_t len)
 		const unsigned char *p = data;
 
 		/*
-		 * For constant inputs, inline the computation to avoid the
-		 * indirect function call. This also allows the compiler to unroll
-		 * loops for small inputs.
+		 * For constant inputs, inline the computation to avoid the indirect
+		 * function call. This also allows the compiler to unroll loops for
+		 * small inputs.
 		 */
 #if SIZEOF_VOID_P >= 8
 		for (; len >= 8; p += 8, len -= 8)
@@ -82,7 +89,8 @@ pg_comp_crc32c_dispatch(pg_crc32c crc, const void *data, size_t len)
 		return crc;
 	}
 	else
-		return pg_comp_crc32c_sse42(crc, data, len);
+		/* Otherwise, use a runtime check for PCLMUL instructions. */
+		return pg_comp_crc32c(crc, data, len);
 }
 
 #elif defined(USE_SSE42_CRC32C_WITH_RUNTIME_CHECK)
@@ -123,7 +131,7 @@ extern pg_crc32c pg_comp_crc32c_loongarch(pg_crc32c crc, const void *data, size_
 #elif defined(USE_ARMV8_CRC32C_WITH_RUNTIME_CHECK)
 
 /*
- * Use Intel SSE 4.2 or ARMv8 instructions, but perform a runtime check first
+ * Use ARMv8 instructions, but perform a runtime check first
  * to check that they are available.
  */
 #define COMP_CRC32C(crc, data, len) \
