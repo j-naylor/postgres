@@ -2352,6 +2352,29 @@ int main(void)
       have_optimized_crc = true
     endif
 
+    avx512_crc_prog = '''
+#include <immintrin.h>
+#include <stdint.h>
+#if defined(__has_attribute) && __has_attribute (target)
+__attribute__((target("avx512vl,vpclmulqdq")))
+#endif
+int main(void)
+{
+      __m512i x0 = _mm512_set1_epi32(0x1);
+      __m512i x1 = _mm512_set1_epi32(0x2);
+      __m512i x2 = _mm512_clmulepi64_epi128(x1, x0, 0x00); // vpclmulqdq
+      __m128i a1 = _mm_xor_epi64(_mm512_castsi512_si128(x1), _mm512_castsi512_si128(x0)); //avx512vl
+      int64_t val = _mm_crc32_u64(0, _mm_extract_epi64(a1, 0)); // 64-bit instruction
+      return (uint32_t)_mm_crc32_u64(val, _mm_extract_epi64(a1, 1));
+}
+'''
+
+    if cc.links(avx512_crc_prog,
+        name: 'AVX-512 CRC32C',
+        args: test_c_args)
+      cdata.set('USE_AVX512_CRC32C_WITH_RUNTIME_CHECK', 1)
+    endif
+
   endif
 
 elif host_cpu == 'arm' or host_cpu == 'aarch64'

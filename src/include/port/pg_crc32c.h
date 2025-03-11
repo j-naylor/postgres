@@ -37,11 +37,6 @@
 
 typedef uint32 pg_crc32c;
 
-/* WIP: configure checks */
-#ifdef __x86_64__
-#define USE_PCLMUL_WITH_RUNTIME_CHECK
-#endif
-
 /* The INIT and EQ macros are the same for all implementations. */
 #define INIT_CRC32C(crc) ((crc) = 0xFFFFFFFF)
 #define EQ_CRC32C(c1, c2) ((c1) == (c2))
@@ -60,7 +55,7 @@ typedef uint32 pg_crc32c;
 
 extern pg_crc32c (*pg_comp_crc32c) (pg_crc32c crc, const void *data, size_t len);
 extern pg_crc32c pg_comp_crc32c_sse42(pg_crc32c crc, const void *data, size_t len);
-#ifdef USE_PCLMUL_WITH_RUNTIME_CHECK
+#ifdef USE_AVX512_CRC32C_WITH_RUNTIME_CHECK
 extern pg_crc32c pg_comp_crc32c_pclmul(pg_crc32c crc, const void *data, size_t len);
 #endif
 
@@ -106,7 +101,7 @@ pg_comp_crc32c_dispatch(pg_crc32c crc, const void *data, size_t len)
 extern pg_crc32c pg_comp_crc32c_sb8(pg_crc32c crc, const void *data, size_t len);
 extern pg_crc32c (*pg_comp_crc32c) (pg_crc32c crc, const void *data, size_t len);
 extern pg_crc32c pg_comp_crc32c_sse42(pg_crc32c crc, const void *data, size_t len);
-#ifdef USE_PCLMUL_WITH_RUNTIME_CHECK
+#ifdef USE_AVX512_CRC32C_WITH_RUNTIME_CHECK
 extern pg_crc32c pg_comp_crc32c_pclmul(pg_crc32c crc, const void *data, size_t len);
 #endif
 
