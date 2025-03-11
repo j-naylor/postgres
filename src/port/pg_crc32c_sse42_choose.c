@@ -20,15 +20,36 @@
 
 #include "c.h"
 
-#ifdef HAVE__GET_CPUID
+#if defined(HAVE__GET_CPUID) || defined(HAVE__GET_CPUID_COUNT)
 #include <cpuid.h>
 #endif
 
-#ifdef HAVE__CPUID
+#include <immintrin.h>
+
+#if defined(HAVE__CPUID) || defined(HAVE__CPUIDEX)
 #include <intrin.h>
 #endif
 
 #include "port/pg_crc32c.h"
+
+/*
+ * Does XGETBV say the ZMM registers are enabled?
+ *
+ * NB: Caller is responsible for verifying that osxsave is available
+ * before calling this.
+ */
+#ifdef HAVE_XSAVE_INTRINSICS
+pg_attribute_target("xsave")
+#endif
+static inline bool
+zmm_regs_available(void)
+{
+#ifdef HAVE_XSAVE_INTRINSICS
+	return (_xgetbv(0) & 0xe6) == 0xe6;
+#else
+	return false;
+#endif
+}
 
 /*
  * This gets called on the first call. It replaces the function pointer
@@ -38,6 +59,15 @@ static pg_crc32c
 pg_comp_crc32c_choose(pg_crc32c crc, const void *data, size_t len)
 {
 	unsigned int exx[4] = {0, 0, 0, 0};
+
+#ifdef USE_SSE42_CRC32C_WITH_RUNTIME_CHECK
+
+	/*
+	 * Set fallback. We must guard since slicing-by-8 is not visible
+	 * everywhere.
+	 */
+	pg_comp_crc32c = pg_comp_crc32c_sb8;
+#endif
 
 #if defined(HAVE__GET_CPUID)
 	__get_cpuid(1, &exx[0], &exx[1], &exx[2], &exx[3]);
@@ -50,15 +80,29 @@ pg_comp_crc32c_choose(pg_crc32c crc, const void *data, size_t len)
 	if ((exx[2] & (1 << 20)) != 0)	/* SSE 4.2 */
 	{
 		pg_comp_crc32c = pg_comp_crc32c_sse42;
-#ifdef USE_PCLMUL_WITH_RUNTIME_CHECK
-		if ((exx[2] & (1 << 1)) != 0)	/* PCLMUL */
-			pg_comp_crc32c = pg_comp_crc32c_pclmul;
+
+#ifdef USE_AVX512_CRC32C_WITH_RUNTIME_CHECK
+		if (exx[2] & (1 << 27) &&	/* OSXSAVE */
+			zmm_regs_available())
+		{
+			/* second cpuid call on leaf 7 to check extended avx512 support */
+
+			memset(exx, 0, 4 * sizeof(exx[0]));
+
+#if defined(HAVE__GET_CPUID_COUNT)
+			__get_cpuid_count(7, 0, &exx[0], &exx[1], &exx[2], &exx[3]);
+#elif defined(HAVE__CPUIDEX)
+			__cpuidex(exx, 7, 0);
+#else
+#error cpuid instruction not available
+#endif
+			if (exx[2] & (1 << 10) &&	/* VPCLMULQDQ */
+				exx[1] & (1 << 31)) /* AVX512-VL */
+				pg_comp_crc32c = pg_comp_crc32c_pclmul;
+
+		}
 #endif
 	}
-#ifdef USE_SSE42_CRC32C_WITH_RUNTIME_CHECK
-	else
-		pg_comp_crc32c = pg_comp_crc32c_sb8;
-#endif
 
 	return pg_comp_crc32c(crc, data, len);
 }
