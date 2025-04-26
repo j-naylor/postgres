@@ -114,10 +114,48 @@ extern pg_crc32c pg_comp_crc32c_avx512(pg_crc32c crc, const void *data, size_t l
 /* Use ARMv8 CRC Extension instructions. */
 
 #define COMP_CRC32C(crc, data, len)							\
-	((crc) = pg_comp_crc32c_armv8((crc), (data), (len)))
+	((crc) = pg_comp_crc32c_dispatch((crc), (data), (len)))
 #define FIN_CRC32C(crc) ((crc) ^= 0xFFFFFFFF)
 
 extern pg_crc32c pg_comp_crc32c_armv8(pg_crc32c crc, const void *data, size_t len);
+
+static inline
+pg_crc32c
+pg_comp_crc32c_dispatch(pg_crc32c crc, const void *data, size_t len)
+{
+	/* require 4-byte alignment to avoid a long preamble */
+	if (__builtin_constant_p(len) &&
+		PointerIsAligned(data, uint32) &&
+		len < 32)
+	{
+		const unsigned char *p = data;
+
+		/*
+		 * For small constant inputs, inline the computation to avoid a
+		 * function call and allow the compiler to unroll loops.
+		 */
+#if 1
+		// WIP: is it better to avoid branching and just use 4-byte instructions???
+		if (!PointerIsAligned(p, uint64) && len > 4)
+		{
+			crc = __crc32cw(crc, *(uint32 *) p);
+			p += 4;
+			len -= 4;
+		}
+#if SIZEOF_VOID_P >= 8
+		for (; len >= 8; p += 8, len -= 8)
+			crc = __crc32cd(crc, *(const uint64 *) p);
+#endif
+#endif
+		for (; len >= 4; p += 4, len -= 4)
+			crc = __crc32cw(crc, *(const uint32 *) p);
+		for (; len > 0; --len)
+			crc = __crc32cb(crc, *p++);
+		return crc;
+	}
+	else
+		return pg_comp_crc32c_armv8(crc, data, len);
+}
 
 #elif defined(USE_LOONGARCH_CRC32C)
 /* Use LoongArch CRCC instructions. */
