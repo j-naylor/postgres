@@ -119,6 +119,20 @@ pg_comp_crc32c_pmull(pg_crc32c crc, const void *data, size_t len)
 	const char *buf = data;
 
 	/* Align to 16 bytes to prevent straddling cacheline boundaries. */
+#if 1
+	// WIP: WAL is 4-byte aligned, so will skip the first loop. Is this better?
+	for (; len && ((uintptr_t) buf & 3); --len)
+	{
+		crc0 = __crc32cb(crc0, *buf++);
+	}
+	if (((uintptr_t) buf & 12) && len >= 4)
+	{
+		crc0 = __crc32cw(crc0, *(const uint64_t *) buf);
+		buf += 4;
+		len -= 4;
+	}
+#else
+	/* original */
 	for (; len && ((uintptr_t) buf & 7); --len)
 	{
 		crc0 = __crc32cb(crc0, *buf++);
@@ -129,6 +143,7 @@ pg_comp_crc32c_pmull(pg_crc32c crc, const void *data, size_t len)
 		buf += 8;
 		len -= 8;
 	}
+#endif
 
 	if (len >= 64)
 	{
@@ -161,7 +176,7 @@ pg_comp_crc32c_pmull(pg_crc32c crc, const void *data, size_t len)
 		 * a possible alternative:
 		x0 = veorq_u64((uint64x2_t) vsetq_lane_u32(crc0, vdupq_n_u32(0), 0), x0);
 		 */
-		x0 = veorq_u64((uint64x2_t) {crc0, 0}, x0);
+		x0 = veorq_u64((uint64x2_t) vsetq_lane_u32(crc0, vdupq_n_u32(0), 0), x0);
 		buf += 64;
 
 		/* Main loop. */
