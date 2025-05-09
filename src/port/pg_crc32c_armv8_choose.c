@@ -151,7 +151,8 @@ pg_comp_crc32c_choose(pg_crc32c crc, const void *data, size_t len)
 #endif
 
 #ifdef USE_PMULL_CRC32C_WITH_RUNTIME_CHECK
-	if (pg_pmull_available())
+	// WIP: force true on MacOS CI
+	// if (pg_pmull_available())
 		pg_comp_crc32c = pg_comp_crc32c_pmull;
 #endif
 
