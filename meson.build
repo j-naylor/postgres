@@ -2523,6 +2523,38 @@ int main(void)
     have_optimized_crc = true
   endif
 
+    # Check if the compiler supports ARMv8 CRYPTO carryless multiplication
+    # and three-way exclusive-or instructions used for computing CRC.
+    # We test with cflags_crc since we also need __crc32cd.
+    prog = '''
+#include <arm_acle.h>
+#include <arm_neon.h>
+uint64x2_t	a;
+uint64x2_t	b;
+uint64x2_t	c;
+
+int main(void)
+{
+    uint64x2_t	r;
+    uint64x2_t	r2;
+
+__asm("pmull %0.1q, %2.1d, %3.1d\neor %0.16b, %0.16b, %1.16b\n":"=w"(r), "+w"(c):"w"(a), "w"(b));
+__asm("pmull2 %0.1q, %2.2d, %3.2d\neor %0.16b, %0.16b, %1.16b\n":"=w"(r2), "+w"(c):"w"(a), "w"(b));
+
+    /* return computed value, to prevent the above being optimized away */
+    r = veorq_u64(r, r2);
+    return __crc32cd(0, vgetq_lane_u64(r, 0));
+}
+'''
+
+  if cc.links(prog,
+      name: 'PMULL CRC32C',
+      args: test_c_args + ['-march=armv8-a+crc+simd+crypto'])
+    # Use ARM CRYPTO Extension, with runtime check
+    cflags_crc += '-march=armv8-a+crc+simd+crypto'
+    cdata.set('USE_PMULL_CRC32C_WITH_RUNTIME_CHECK', 1)
+  endif
+
 elif host_cpu == 'loongarch64'
 
   prog = '''

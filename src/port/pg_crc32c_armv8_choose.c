@@ -107,6 +107,27 @@ pg_crc32c_armv8_available(void)
 #endif
 }
 
+static inline bool
+pg_pmull_available(void)
+{
+#ifdef __aarch64__
+
+#ifdef HAVE_ELF_AUX_INFO
+	unsigned long value;
+
+	return elf_aux_info(AT_HWCAP, &value, sizeof(value)) == 0 &&
+		(value & HWCAP_PMULL) != 0;
+#elif defined(HAVE_GETAUXVAL)
+	return (getauxval(AT_HWCAP) & HWCAP_PMULL) != 0;
+#else
+	return false;
+#endif
+
+#else
+	return false;
+#endif
+}
+
 /*
  * This gets called on the first call. It replaces the function pointer
  * so that subsequent calls are routed directly to the chosen implementation.
@@ -114,10 +135,25 @@ pg_crc32c_armv8_available(void)
 static pg_crc32c
 pg_comp_crc32c_choose(pg_crc32c crc, const void *data, size_t len)
 {
+#if defined(USE_ARMV8_CRC32C_WITH_RUNTIME_CHECK)
 	if (pg_crc32c_armv8_available())
 		pg_comp_crc32c = pg_comp_crc32c_armv8;
 	else
 		pg_comp_crc32c = pg_comp_crc32c_sb8;
+
+#elif defined(USE_ARMV8_CRC32C)
+	/*
+	 * On MacOS, compilers may emit CRC instructions without extra CFLAGS, but
+	 * we can't use Linux-isms to detect CPU features, so we just set it here
+	 * as a fallback for PMULL.
+	 */
+	pg_comp_crc32c = pg_comp_crc32c_armv8;
+#endif
+
+#ifdef USE_PMULL_CRC32C_WITH_RUNTIME_CHECK
+	if (pg_pmull_available())
+		pg_comp_crc32c = pg_comp_crc32c_pmull;
+#endif
 
 	return pg_comp_crc32c(crc, data, len);
 }

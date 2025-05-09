@@ -111,13 +111,22 @@ extern pg_crc32c pg_comp_crc32c_avx512(pg_crc32c crc, const void *data, size_t l
 #endif
 
 #elif defined(USE_ARMV8_CRC32C)
-/* Use ARMv8 CRC Extension instructions. */
+/*
+ * Use either ARMv8 CRC Extension or CRYPTO Extension (PMULL) instructions.
+ * We don't need a runtime check for CRC, so we can inline those in some cases.
+ */
+
+#include <arm_acle.h>
 
 #define COMP_CRC32C(crc, data, len)							\
 	((crc) = pg_comp_crc32c_dispatch((crc), (data), (len)))
 #define FIN_CRC32C(crc) ((crc) ^= 0xFFFFFFFF)
 
+extern pg_crc32c (*pg_comp_crc32c) (pg_crc32c crc, const void *data, size_t len);
 extern pg_crc32c pg_comp_crc32c_armv8(pg_crc32c crc, const void *data, size_t len);
+#ifdef USE_PMULL_CRC32C_WITH_RUNTIME_CHECK
+extern pg_crc32c pg_comp_crc32c_pmull(pg_crc32c crc, const void *data, size_t len);
+#endif
 
 static inline
 pg_crc32c
@@ -133,6 +142,8 @@ pg_comp_crc32c_dispatch(pg_crc32c crc, const void *data, size_t len)
 		/*
 		 * For small constant inputs, inline the computation to avoid a
 		 * function call and allow the compiler to unroll loops.
+		 *
+		 * WIP: this path was found to be beneficial on x86, but needs testing on Arm
 		 */
 #if 1
 		// WIP: is it better to avoid branching and just use 4-byte instructions???
@@ -154,7 +165,8 @@ pg_comp_crc32c_dispatch(pg_crc32c crc, const void *data, size_t len)
 		return crc;
 	}
 	else
-		return pg_comp_crc32c_armv8(crc, data, len);
+		/* Otherwise, use a runtime check for PMULL instructions. */
+		return pg_comp_crc32c(crc, data, len);
 }
 
 #elif defined(USE_LOONGARCH_CRC32C)
@@ -179,6 +191,9 @@ extern pg_crc32c pg_comp_crc32c_loongarch(pg_crc32c crc, const void *data, size_
 extern pg_crc32c pg_comp_crc32c_sb8(pg_crc32c crc, const void *data, size_t len);
 extern pg_crc32c (*pg_comp_crc32c) (pg_crc32c crc, const void *data, size_t len);
 extern pg_crc32c pg_comp_crc32c_armv8(pg_crc32c crc, const void *data, size_t len);
+#ifdef USE_PMULL_CRC32C_WITH_RUNTIME_CHECK
+extern pg_crc32c pg_comp_crc32c_pmull(pg_crc32c crc, const void *data, size_t len);
+#endif
 
 #else
 /*
